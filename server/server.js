@@ -1,37 +1,84 @@
-const express = require('express');
-const app = express();
-const port = process.env.PORT || 3001;
-const cors = require('cors');
-const mongoose = require('mongoose');
-const {Server} = require('socket.io');
+var app = require('express')();
+var http = require('http').createServer(app);
+var io = require('socket.io')(http);
 
-app.use(cors());
+var users = [];
+var channels = ['#General'];
 
-const server = require('http').createServer(app);
-const io = new Server(server, {
-    cors:{
-        origin: 'http://localhost:3000/',
-        methods: ["GET", "POST"],
-    }
-});
+io.on('connection', (socket, messages) => {
+    var me = '';
 
+    /*
+    * Connexion d'un utilisateur
+    */
+    socket.on('login', (user) => {
+        users.push(user.username);
+        me = user.username;
+        io.emit('listUsers', {
+            user: users
+        })
 
-io.on("connection", (socket) => {
-    console.log(`User Connected ${socket.id}`);
+        io.emit('listChannels', {
+            channels: channels
+        })
 
-    socket.on("join_room", () => {
-        
+        socket.broadcast.emit('newuser', {
+            username: user.username
+        })
+
+    });
+
+    /*
+    * Deconnexion d'un utilisateur
+    */
+    socket.on('disconnect', (user) => {
+        if(me != '') {
+            socket.broadcast.emit('disuser', {
+                username: me
+            })
+            users = users.filter(user => user !== me);
+            io.emit('listUsers', {
+                user: users
+            })
+        }
     })
 
-    socket.on("disconnect", () => {
-        console.log("user disconnected", socket.id);
-    });
+    /*
+    * Envoi des messages à tous les clients
+    */
+    socket.on('newmessage', function(message) {
+        io.emit('newmsg', {
+            messages: message
+        })
+    })
+
+    /*
+    * Changement d'username
+    */
+    socket.on('rename', function(username) {
+        me = username.rename;
+        users = users.filter(user => user !== username.username);
+        users.push(username.rename);
+        io.emit('listUsers', {
+            user: users
+        });
+        io.emit('renameuser', {
+            username: username.username,
+            rename: username.rename
+        })
+    })
+
+    /*
+    * Création d'un nouveau channel
+    */
+    socket.on('newChannel', function(channel) {
+        channels.push('#' + channel.channel);
+        io.emit('listChannels', {
+            channels: channels
+        })
+    })
 });
 
-/* app.get('/', cors(), async(req, res) =>{
-    res.send('Hello World!');
-}) */
-
-app.use(express.static(__dirname + '/public'));
-
-server.listen(port, () =>console.log('Server listening at port %d', port));
+http.listen(3001, function(){
+    console.log('listening on *:3001');
+});
